@@ -1,4 +1,4 @@
-\# DFA simulator
+# DFA simulator
 
 
 
