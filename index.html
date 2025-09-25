@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Automata Explorer — Minimal Viable Tool</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg:#0b0d10;--panel:#101318;--muted:#8b97a8;--text:#e6eef8;--ok:#10b981;--bad:#ef4444;--brand:#89b4ff}
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font:16px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      color:var(--text); background:linear-gradient(180deg,#0a0c10,#0b0f14 30%,#0c1118);
+    }
+    .wrap{max-width:980px;margin:32px auto;padding:0 16px}
+    h1{font-size:34px;letter-spacing:.4px;margin:8px 0 24px}
+    .badge{color:#000;background:var(--brand);padding:2px 8px;border-radius:999px;font:600 12px/1 ui-sans-serif;vertical-align:middle;margin-left:8px}
+    .grid{display:grid;gap:14px}
+    label{display:block;margin:8px 0 6px;color:var(--muted);font-weight:600}
+    input[type=text], textarea{
+      width:100%;padding:12px 14px;border-radius:10px;border:1px solid #263041;
+      background:#0f131a;color:var(--text);outline:none;
+    }
+    input[type=text]:focus, textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 2px #1d4ed81a}
+    textarea{min-height:160px;white-space:pre}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{
+      appearance:none;border:1px solid #2a3446;background:#121823;color:var(--text);
+      padding:10px 16px;border-radius:10px;font-weight:600;cursor:pointer
+    }
+    .btn:hover{background:#171e2a}
+    .btn.primary{background:#2563eb;border-color:#2563eb}
+    .btn.primary:hover{background:#1d4ed8}
+    .panel{
+      margin-top:14px;background:var(--panel);border:1px solid #263041;border-radius:12px;padding:14px
+    }
+    .muted{color:var(--muted)}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace}
+    .status{padding:12px;border-radius:10px;margin-top:8px}
+    .ok{background:#052e1a;border:1px solid #134e36}
+    .bad{background:#2b0b0b;border:1px solid #5f2020}
+    .path{word-break:break-word}
+    .footer{color:#6b7280;margin-top:24px;font-size:13px}
+    code.k{background:#0e1420;border:1px solid #23304a;border-radius:6px;padding:2px 6px;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Automata Explorer — Minimal Viable Tool <span class="badge">DFA</span></h1>
+
+    <div class="grid">
+      <div>
+        <label for="states">States (comma-separated)</label>
+        <input id="states" type="text" value="q0,q1">
+      </div>
+
+      <div>
+        <label for="alphabet">Alphabet Σ</label>
+        <input id="alphabet" type="text" value="a,b">
+      </div>
+
+      <div>
+        <label for="start">Start state</label>
+        <input id="start" type="text" value="q0">
+      </div>
+
+      <div>
+        <label for="accept">Accepting states F</label>
+        <input id="accept" type="text" value="q1">
+      </div>
+
+      <div>
+        <label for="delta">Transitions δ</label>
+        <textarea id="delta" spellcheck="false">q0,a=q1
+q0,b=q0
+q1,a=q0
+q1,b=q1</textarea>
+        <div class="muted mono" style="margin-top:6px">Format: <code class="k">state,symbol=nextState</code> (one rule per line)</div>
+      </div>
+
+      <div>
+        <label for="input">Input string</label>
+        <input id="input" type="text" value="abba">
+      </div>
+
+      <div class="row">
+        <button id="run" class="btn primary">Run</button>
+        <button id="load" class="btn">Load Sample</button>
+        <button id="clear" class="btn">Clear</button>
+      </div>
+
+      <div id="out" class="panel muted mono">Ready.</div>
+    </div>
+
+    <div class="footer">
+      DFA simulator with inline error reporting. Unknown transitions go to an implicit <code class="k">__dead__</code> state.
+    </div>
+  </div>
+
+  <script>
+    const el = id => document.getElementById(id);
+    const out = el('out');
+
+    // Two-state sample used by the "Load Sample" button.
+    const SAMPLE = {
+      states: 'q0,q1',
+      alphabet: 'a,b',
+      start: 'q0',
+      accept: 'q1',
+      delta: `q0,a=q1
+q0,b=q0
+q1,a=q0
+q1,b=q1`,
+      input: 'abba'
+    };
+
+    function setOut(html, cls) {
+      out.className = 'panel muted mono' + (cls ? ' status ' + cls : '');
+      out.innerHTML = html;
+    }
+
+    function parseCSV(s) {
+      if (!s.trim()) return [];
+      return s.split(',').map(x => x.trim()).filter(x => x.length > 0);
+    }
+
+    function parseDelta(text) {
+      const map = new Map();
+      const lines = text.split(/\r?\n/);
+      const rx = /^\s*([^,\s=]+)\s*,\s*([^,\s=]+)\s*=\s*([^,\s=]+)\s*$/;
+      let usedStates = new Set();
+      let usedSymbols = new Set();
+
+      for (const [i, raw] of lines.entries()) {
+        const line = raw.trim();
+        if (!line) continue;
+        const m = rx.exec(line);
+        if (!m) {
+          throw new Error(`Invalid transition on line ${i + 1}: "${raw}"`);
+        }
+        const [_, s, a, t] = m;
+        const key = s + '|' + a;
+        if (map.has(key)) {
+          throw new Error(`Duplicate transition for (${s}, ${a}) on line ${i + 1}`);
+        }
+        map.set(key, t);
+        usedStates.add(s); usedStates.add(t);
+        usedSymbols.add(a);
+      }
+      return { map, usedStates, usedSymbols };
+    }
+
+    function run() {
+      try {
+        // Read form
+        const states = parseCSV(el('states').value);
+        const alphabet = parseCSV(el('alphabet').value);
+        const start = el('start').value.trim();
+        const accepts = new Set(parseCSV(el('accept').value));
+        const input = el('input').value.trim();
+        const { map, usedStates, usedSymbols } = parseDelta(el('delta').value);
+
+        // Basic validation
+        if (states.length === 0) throw new Error('States must not be empty.');
+        if (alphabet.length === 0) throw new Error('Alphabet must not be empty.');
+        if (!states.includes(start)) throw new Error(`Start state "${start}" is not in States.`);
+        for (const f of accepts) if (!states.includes(f)) throw new Error(`Accepting state "${f}" is not in States.`);
+        for (const s of usedStates) if (!states.includes(s)) throw new Error(`Transition refers to unknown state: ${s}`);
+        for (const a of usedSymbols) if (!alphabet.includes(a)) throw new Error(`Transition uses symbol not in alphabet: ${a}`);
+
+        // Simulate
+        let curr = start;
+        const path = [curr];
+        const DEAD = '__dead__';
+        for (const ch of input) {
+          if (!alphabet.includes(ch)) throw new Error(`Input symbol not in alphabet: ${ch}`);
+          const key = curr + '|' + ch;
+          curr = map.has(key) ? map.get(key) : DEAD;
+          path.push(curr);
+          if (curr === DEAD) break;
+        }
+
+        const ok = accepts.has(curr);
+        const pathStr = path.join(' → ');
+        const html =
+          `<div class="path">Path: ${pathStr}</div>` +
+          `<div style="margin-top:6px">Status: <strong style="color:${ok ? 'var(--ok)' : 'var(--bad)'}">${ok ? 'ACCEPT' : 'REJECT'}</strong></div>`;
+        setOut(html, ok ? 'ok' : 'bad');
+      } catch (e) {
+        setOut(`JS Error: ${e.message}`, 'bad');
+      }
+    }
+
+    function loadSample() {
+      el('states').value = SAMPLE.states;
+      el('alphabet').value = SAMPLE.alphabet;
+      el('start').value = SAMPLE.start;
+      el('accept').value = SAMPLE.accept;
+      el('delta').value = SAMPLE.delta;
+      el('input').value = SAMPLE.input;
+      setOut('Sample loaded. Click <b>Run</b> to simulate.', '');
+    }
+
+    function clearAll() {
+      el('states').value = '';
+      el('alphabet').value = '';
+      el('start').value = '';
+      el('accept').value = '';
+      el('delta').value = '';
+      el('input').value = '';
+      setOut('Cleared.', '');
+    }
+
+    // Wire up
+    el('run').addEventListener('click', run);
+    el('load').addEventListener('click', loadSample);
+    el('clear').addEventListener('click', clearAll);
+
+    // Initial message
+    setOut('Ready.', '');
+  </script>
+</body>
+</html>
