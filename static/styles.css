@@ -613,3 +613,5 @@ button.secondary {
     display: grid;
   }
 }
+.logout-form { display: inline; margin: 0; }
+.logout-button { background: transparent; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }

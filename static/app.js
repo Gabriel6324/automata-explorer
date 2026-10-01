@@ -262,20 +262,38 @@ function downloadDfaJson(form) {
   URL.revokeObjectURL(a.href);
 }
 
+function validatedDfaImport(raw, fixedAlphabet) {
+  const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!record(raw) || !['states','alphabet','accepting'].every(key => Array.isArray(raw[key]) && raw[key].every(value => typeof value === 'string')) || typeof raw.start !== 'string' || !record(raw.transitions)) {
+    throw new Error('DFA JSON needs states, alphabet, start, accepting and a transitions object.');
+  }
+  if (Object.values(raw.transitions).some(mapping => !record(mapping) || Object.values(mapping).some(target => typeof target !== 'string'))) {
+    throw new Error('Each transition must map a symbol to a state name.');
+  }
+  const lines = Object.entries(raw.transitions).flatMap(([src,mapping]) => Object.entries(mapping).map(([symbol,target]) => `${src},${symbol}=${target}`));
+  const report = validationSummary(raw, lines.join('\n'));
+  if (report.errors.length) throw new Error(report.errors.join('\n'));
+  if (fixedAlphabet !== undefined && JSON.stringify([...raw.alphabet].sort()) !== JSON.stringify(parseCsv(fixedAlphabet).sort())) {
+    throw new Error('The imported alphabet must match this exercise.');
+  }
+  return raw;
+}
+
 function loadDfaJsonIntoForm(fileInput, form) {
   const file = fileInput.files && fileInput.files[0];
   if (!file || !form) return;
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const dfa = JSON.parse(e.target.result);
+      const dfa = validatedDfaImport(JSON.parse(e.target.result), form.dataset.fixedAlphabet);
+      if (form._dfaEditor) form._dfaEditor.pushHistory();
       fillFormFromDfa(form, dfa);
       if (form._dfaEditor) form._dfaEditor.loadFromForm();
       const preview = form.dataset.previewId;
       const json = form.dataset.jsonId;
       if (preview && json) renderDfaPreview(dfa, preview, json);
     } catch (err) {
-      alert('Invalid JSON file.');
+      alert(err.message || 'Invalid JSON file.');
     }
   };
   reader.readAsText(file);
@@ -512,6 +530,7 @@ function trimDfaJs(dfa) {
 
 // Mirror the server-side partition feedback for client-side warnings.
 function partitionSnapshotsJs(dfa) {
+  const originalStates = new Set(dfa.states || []);
   const cleaned = trimDfaJs(completeDfaJs(dfa));
   if (!cleaned.start || !(cleaned.states || []).length || !(cleaned.alphabet || []).length) {
     return { groups: [], snapshots: [] };
@@ -523,7 +542,7 @@ function partitionSnapshotsJs(dfa) {
   const rejectingBlock = states.filter(state => !accepting.has(state));
   if (acceptingBlock.length) partition.push(acceptingBlock);
   if (rejectingBlock.length) partition.push(rejectingBlock);
-  const snapshots = [{ round: 0, blocks: partition.map(block => block.filter(state => state !== '__dead__')) }];
+  const snapshots = [{ round: 0, blocks: partition.map(block => block.filter(state => originalStates.has(state))).filter(block => block.length) }];
   while (true) {
     const blockIndex = Object.create(null);
     partition.forEach((block, index) => block.forEach(state => { blockIndex[state] = index; }));
@@ -542,9 +561,9 @@ function partitionSnapshotsJs(dfa) {
     });
     if (!changed) break;
     partition = nextPartition;
-    snapshots.push({ round: snapshots.length, blocks: partition.map(block => block.filter(state => state !== '__dead__')).filter(block => block.length) });
+    snapshots.push({ round: snapshots.length, blocks: partition.map(block => block.filter(state => originalStates.has(state))).filter(block => block.length) });
   }
-  const finalBlocks = partition.map(block => block.filter(state => state !== '__dead__')).filter(block => block.length);
+  const finalBlocks = partition.map(block => block.filter(state => originalStates.has(state))).filter(block => block.length);
   return {
     groups: finalBlocks.filter(block => block.length > 1),
     snapshots,
@@ -579,6 +598,7 @@ function setDerivedMode(form, derived) {
 async function requestSourcePreview(form) {
   const select = form.querySelector('[data-source-kind]');
   if (!select) return;
+  const version = form._sourcePreviewVersion = (form._sourcePreviewVersion || 0) + 1;
   const value = select.value || 'dfa';
   if (value === 'dfa') {
     setDerivedMode(form, false);
@@ -603,6 +623,7 @@ async function requestSourcePreview(form) {
       body: JSON.stringify({ source_kind: value, source_payload: sourcePayload }),
     });
     const payload = await response.json();
+    if (version !== form._sourcePreviewVersion) return;
     if (!response.ok || !payload.ok) {
       setSourceStatus(form, 'error', 'Source preview error', payload.errors || ['Could not generate the DFA preview from this source.']);
       return;
@@ -612,12 +633,14 @@ async function requestSourcePreview(form) {
     renderDfaPreview(payload.dfa, form.dataset.previewId, form.dataset.jsonId);
     setSourceStatus(form, 'ok', payload.summary.title || 'Source preview ready', payload.summary.notes || []);
   } catch (error) {
+    if (version !== form._sourcePreviewVersion) return;
     setSourceStatus(form, 'error', 'Source preview error', ['The preview request failed. Check the source and try again.']);
   }
 }
 
 function scheduleSourcePreview(form, immediate = false) {
   if (!form) return;
+  form._sourcePreviewVersion = (form._sourcePreviewVersion || 0) + 1;
   clearTimeout(form._sourcePreviewTimer);
   if (immediate) {
     requestSourcePreview(form);
