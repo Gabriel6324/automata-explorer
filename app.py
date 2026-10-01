@@ -14,6 +14,7 @@ except ImportError:
     ZoneInfo = None
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import (
     Flask,
@@ -36,10 +37,39 @@ SECRET_KEY = os.environ.get("AUTOMATA_SECRET_KEY") or secrets.token_hex(32)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SECRET_KEY
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 try:
     APP_TZ = ZoneInfo("Europe/London") if ZoneInfo else None
 except Exception:
     APP_TZ = None
+
+
+@app.before_request
+def local_request_guard():
+    try:
+        host = urlsplit("http://" + request.host).hostname
+    except ValueError:
+        host = None
+    if host not in {"localhost", "127.0.0.1", "::1"}:
+        return "Use the local application address.", 400
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("Origin")
+        try:
+            same_origin = not origin or (urlsplit(origin).scheme in {"http", "https"} and urlsplit(origin).netloc.lower() == request.host.lower())
+        except ValueError:
+            same_origin = False
+        if not same_origin or request.headers.get("Sec-Fetch-Site") == "cross-site":
+            return "Cross-site changes are not allowed.", 403
+
+
+@app.after_request
+def local_response_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    if request.endpoint != "static":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # Store timestamps in the UK timezone when available.
@@ -181,7 +211,14 @@ def csv_response(filename, rows, headers):
     writer = csv.DictWriter(output, fieldnames=headers)
     writer.writeheader()
     for row in rows:
-        writer.writerow(row)
+        # CSV quoting alone does not stop a spreadsheet from evaluating formulas.
+        safe_row = {
+            key: "'" + value if isinstance(value, str) and
+            (value.lstrip("\ufeff \t\r\n").startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")))
+            else value
+            for key, value in row.items()
+        }
+        writer.writerow(safe_row)
     return Response(
         output.getvalue(),
         mimetype="text/csv; charset=utf-8",
@@ -380,6 +417,8 @@ def login_required(role=None):
             if user is None:
                 session.clear()
                 return redirect(url_for("login"))
+            session["role"] = user["role"]
+            session["username"] = user["username"]
             if user["must_change_password"] and request.endpoint != "change_password":
                 return redirect(url_for("change_password"))
             if role and user["role"] != role:
@@ -510,6 +549,10 @@ def regex_to_postfix(pattern):
     tokens = regex_with_concat(regex_tokens(pattern))
     if not tokens:
         return [], ['Regular expression source cannot be empty. Enter a regex in the “Regular expression source” box below, or switch Target source type back to DFA.']
+    alphabet = list(dict.fromkeys(tok for tok in tokens if tok not in {'|', '.', '*', '(', ')', 'ε', 'e'}))
+    symbol_errors = automaton_field_errors([], alphabet)
+    if symbol_errors:
+        return [], symbol_errors
     output = []
     stack = []
     errors = []
@@ -940,6 +983,7 @@ def equivalent_state_groups(dfa):
 
 # Keep partition-refinement snapshots for minimality feedback.
 def partition_refinement_snapshots(dfa):
+    original_states = set(dfa["states"])
     dfa = trim_dfa(complete_dfa(dfa))
     if not dfa.get("states"):
         return []
@@ -1008,17 +1052,17 @@ def partition_refinement_snapshots(dfa):
     for snapshot in snapshots:
         blocks = []
         for block in snapshot["blocks"]:
-            visible = [state for state in block if state != "__dead__"]
+            visible = [state for state in block if state in original_states]
             if visible:
                 blocks.append(visible)
         if not blocks:
             continue
         cleaned_split_rows = []
         for split in snapshot["splits"]:
-            from_block = [state for state in split["from"] if state != "__dead__"]
+            from_block = [state for state in split["from"] if state in original_states]
             parts = []
             for part in split["parts"]:
-                visible_states = [state for state in part["states"] if state != "__dead__"]
+                visible_states = [state for state in part["states"] if state in original_states]
                 if visible_states:
                     parts.append({"states": visible_states, "signature": part["signature"]})
             if from_block and len(parts) > 1:
@@ -1220,7 +1264,9 @@ def evaluate_submission(answer_dfa, target_dfa, require_determinism=True, requir
         if partition_snapshots:
             merge_groups = [group for group in partition_snapshots[-1]["blocks"] if len(group) > 1]
         if not merge_groups:
-            merge_groups = [group for group in equivalent_state_groups(answer_dfa) if len(group) > 1 and '__dead__' not in group]
+            original_states = set(answer_dfa["states"])
+            visible_groups = [[state for state in group if state in original_states] for group in equivalent_state_groups(answer_dfa)]
+            merge_groups = [group for group in visible_groups if len(group) > 1]
         partition_feedback = partition_feedback_lines(merge_groups, partition_snapshots)
     hints = make_hints(answer_dfa, target_dfa, deterministic_ok, minimal_ok, equivalent_counterexample, merge_groups, partition_feedback)
     trace = None
@@ -1416,7 +1462,8 @@ def build_student_progress(db, user_id):
 # Build dashboard counts and progress rows for a teacher.
 def build_teacher_overview(db, teacher_id, exercises=None):
     students = get_managed_students(db, teacher_id, include_archived_groups=False)
-    exercises = exercises or get_managed_exercises(db, teacher_id)
+    if exercises is None:
+        exercises = get_managed_exercises(db, teacher_id)
     exercise_ids = [ex["id"] for ex in exercises]
     student_ids = [s["id"] for s in students]
     latest_map = get_latest_submissions_map(db, student_ids, exercise_ids)
@@ -1433,6 +1480,7 @@ def build_teacher_overview(db, teacher_id, exercises=None):
                 progress_map.setdefault(stu["id"], {})[ex["id"]] = {
                     "completed": item["completed"],
                     "result": item["result"],
+                    "stale": item["stale"],
                     "time": item["row"]["created_at"],
                 }
                 student_progress[ex["id"]] = item
@@ -1582,11 +1630,18 @@ def get_exercise_group_ids(db, exercise_id):
     return [r["group_id"] for r in rows]
 
 
-def set_exercise_group_ids(db, exercise_id, group_ids):
+def set_exercise_group_ids(db, exercise_id, group_ids, preserve_archived=False):
     owner = db.execute("SELECT created_by FROM exercises WHERE id = ?", (exercise_id,)).fetchone()
     if owner is None:
         raise ValueError("Exercise not found.")
     group_ids = parse_group_ids(db, owner["created_by"], group_ids)
+    if preserve_archived:
+        archived = db.execute(
+            "SELECT eg.group_id FROM exercise_groups eg JOIN student_groups g ON g.id = eg.group_id "
+            "WHERE eg.exercise_id = ? AND g.teacher_id = ? AND g.is_archived = 1",
+            (exercise_id, owner["created_by"]),
+        ).fetchall()
+        group_ids = sorted(set(group_ids) | {row["group_id"] for row in archived})
     db.execute("DELETE FROM exercise_groups WHERE exercise_id = ?", (exercise_id,))
     for gid in group_ids:
         db.execute("INSERT OR IGNORE INTO exercise_groups (exercise_id, group_id) VALUES (?, ?)", (exercise_id, gid))
@@ -1663,9 +1718,13 @@ def exercise_summary_row(db, ex):
 # Routes are grouped by public access, teacher workflow and student workflow.
 @app.route("/")
 def index():
-    if "user_id" not in session:
+    user = current_user_row()
+    if user is None:
+        session.clear()
         return redirect(url_for("login"))
-    if session.get("role") == "teacher":
+    session["role"] = user["role"]
+    session["username"] = user["username"]
+    if user["role"] == "teacher":
         return redirect(url_for("teacher_dashboard"))
     return redirect(url_for("student_dashboard"))
 
@@ -1691,7 +1750,7 @@ def login():
     return render_template("login.html")
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     flash("You have been logged out.", "success")
@@ -1874,9 +1933,10 @@ def teacher_export_progress_csv():
             counterexample = ""
             time = ""
             if item:
-                status = "Completed" if item["completed"] else "Attempted"
-                equivalent = "Yes" if item["result"].get("equivalent") else "No"
-                minimal = "Yes" if item["result"].get("minimal") else "No"
+                status = "Needs resubmission" if item["stale"] else ("Completed" if item["completed"] else "Attempted")
+                if not item["stale"]:
+                    equivalent = "Yes" if item["result"].get("equivalent") else "No"
+                    minimal = "Yes" if item["result"].get("minimal") else "No"
                 counterexample = item["result"].get("counterexample") or ""
                 time = display_dt(item["time"])
             rows.append({
@@ -2267,7 +2327,7 @@ def teacher_edit_exercise(exercise_id):
                 teacher_id,
             ),
         )
-        set_exercise_group_ids(db, exercise_id, selected_groups)
+        set_exercise_group_ids(db, exercise_id, selected_groups, preserve_archived=True)
         db.commit()
         flash("Exercise updated.", "success")
         return redirect(url_for("teacher_view_exercise", exercise_id=exercise_id))
@@ -2346,12 +2406,12 @@ def teacher_exercise_access():
     exercises = [ex for ex in all_exercises if not q or q in ex['title'].lower() or q in (ex['description'] or '').lower()]
     if request.method == "POST":
         try:
-            assignments = [(ex["id"], parse_group_ids(db, teacher_id, request.form.getlist(f"groups_{ex['id']}"))) for ex in all_exercises]
+            assignments = [(ex["id"], parse_group_ids(db, teacher_id, request.form.getlist(f"groups_{ex['id']}"))) for ex in exercises]
         except ValueError as exc:
             flash(str(exc), "error")
             return redirect(url_for("teacher_exercise_access", q=q))
         for exercise_id, selected in assignments:
-            set_exercise_group_ids(db, exercise_id, selected)
+            set_exercise_group_ids(db, exercise_id, selected, preserve_archived=True)
         db.commit()
         flash("Exercise group access updated.", "success")
         return redirect(url_for("teacher_exercise_access", q=q))
