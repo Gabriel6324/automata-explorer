@@ -27,7 +27,9 @@
           <a href="{{ url_for('student_submissions') }}">My submissions</a>
         {% endif %}
         <a href="{{ url_for('change_password') }}">Change password</a>
-        <a href="{{ url_for('logout') }}">Logout</a>
+        <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+          <button type="submit" class="logout-button">Logout</button>
+        </form>
       {% endif %}
     </nav>
   </header>
