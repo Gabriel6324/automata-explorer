@@ -76,5 +76,37 @@ for (const alphabet of [['ab'],['ε'],['='],['a','a']]) {
   assert.ok(validationSummary({...sample,alphabet},'').fieldErrors.alphabet.length);
 }
 assert.equal(validationSummary({...sample,alphabet:[],transitions:{}},'').errors.length,0);
+const namedDead={states:['q0','__dead__'],alphabet:['a'],start:'q0',accepting:[],transitions:{q0:{a:'__dead__'},__dead__:{a:'__dead__'}}};
+assert.ok(partitionSnapshotsJs(namedDead).groups.some(group=>group.includes('__dead__')&&group.includes('q0')));
 `, context);
-console.log('Frontend regressions passed: fixed alphabets, clear/undo/redo/import/restore, text messages, delimiters and symbols.');
+context.setTimeout=setTimeout; context.clearTimeout=clearTimeout;
+vm.runInContext(`
+(async()=>{
+  const alerts=[];
+  globalThis.alert=message=>alerts.push(message);
+  globalThis.FileReader=class {readAsText(file){this.onload({target:{result:file.data}});}};
+  const imported=formFor(); fillFormFromDfa(imported,sample);
+  const before=JSON.stringify(Object.fromEntries(Object.entries(imported.fields).map(([key,field])=>[key,field.value])));
+  const invalid={states:['changed'],alphabet:['a'],start:'changed',accepting:[],transitions:{changed:null}};
+  loadDfaJsonIntoForm({files:[{data:JSON.stringify(invalid)}],value:'selected'},imported);
+  assert.ok(alerts.length);
+  assert.equal(JSON.stringify(Object.fromEntries(Object.entries(imported.fields).map(([key,field])=>[key,field.value]))),before);
+  const fixed=formFor('a,b'); fillFormFromDfa(fixed,sample);
+  loadDfaJsonIntoForm({files:[{data:JSON.stringify({...sample,alphabet:['x']})}],value:'selected'},fixed);
+  assert.equal(fixed.fields.alphabet.value,'a,b');
+  loadDfaJsonIntoForm({files:[{data:JSON.stringify(sample)}],value:'selected'},imported);
+  assert.equal(imported.fields.states.value,'q0');
+
+  const preview=formFor(); const select={value:'regex'}, source={value:'a'}, pending=[];
+  const baseQuery=preview.querySelector.bind(preview);
+  preview.querySelector=selector=>selector==='[data-source-kind]'?select:selector.startsWith('[data-source-input=')?source:baseQuery(selector);
+  setDerivedMode=()=>{}; setSourceStatus=()=>{}; renderDfaPreview=()=>{};
+  globalThis.fetch=()=>new Promise(resolve=>pending.push(resolve));
+  const first=requestSourcePreview(preview);
+  source.value='b'; const second=requestSourcePreview(preview);
+  const response=alphabet=>({ok:true,json:async()=>({ok:true,dfa:{states:['q0'],alphabet:[alphabet],start:'q0',accepting:[],transitions:{}},summary:{title:'Preview',notes:[]}})});
+  pending[1](response('b')); await second;
+  pending[0](response('a')); await first;
+  assert.equal(preview.fields.alphabet.value,'b','An older preview must not overwrite the current source');
+})()
+`, context).then(()=>console.log('Frontend regressions passed: editor history, fixed alphabets, safe messages, JSON import, named states and asynchronous source previews.')).catch(error=>{console.error(error);process.exitCode=1;});
