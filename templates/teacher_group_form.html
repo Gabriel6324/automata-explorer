@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>Edit group</h2>
+  <a href="{{ url_for('teacher_groups') }}">Back</a>
+</div>
+<div class="card narrow-card">
+  <form method="post" class="form-grid one-col" novalidate>
+    <label>Group name
+      <input type="text" name="name" value="{{ initial.name }}">
+    </label>
+    <label>Year / label
+      <input type="text" name="year_label" value="{{ initial.year_label }}">
+    </label>
+    <div class="button-row">
+      <button type="submit">Save changes</button>
+      <a class="button-link secondary-link" href="{{ url_for('teacher_groups') }}">Cancel</a>
+    </div>
+    <p class="muted">Editing a group only changes its name and year / label. It does not change student members or exercise access.</p>
+  </form>
+</div>
+{% endblock %}

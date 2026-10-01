@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>Manage students</h2>
+  <a href="{{ url_for('teacher_dashboard') }}">Back</a>
+</div>
+<div class="layout-two students-layout">
+  <section class="card">
+    <h3>Create student account</h3>
+    <form method="post" class="form-grid one-col" novalidate>
+      <label>Student email
+        <input type="email" name="email" placeholder="student@example.com">
+      </label>
+      <label>Student group
+        <select name="group_id">
+          <option value="">No group</option>
+          {% for group in group_options %}
+            <option value="{{ group.id }}">{{ group.name }}{% if group.year_label %} ({{ group.year_label }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Create student</button>
+    </form>
+    <p class="muted top-gap">Username is generated from the email prefix. A temporary 8-digit password is generated automatically.</p>
+  </section>
+
+  <section class="card" id="{{ current_anchor }}">
+    <h3>Managed students</h3>
+    <form method="get" class="form-grid two-col filter-form" novalidate>
+      <label>Find a student
+        <input type="text" name="q" value="{{ q }}" placeholder="Search username or email">
+      </label>
+      <label>Show section
+        <select name="group_filter">
+          <option value="ungrouped" {% if group_filter == 'ungrouped' %}selected{% endif %}>No group</option>
+          {% for group in group_options %}
+            <option value="{{ group.id }}" {% if group_filter == group.id|string %}selected{% endif %}>{{ group.name }}{% if group.year_label %} ({{ group.year_label }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="button-row compact-buttons">
+        <button type="submit">Apply</button>
+        <a class="button-link secondary-link" href="{{ url_for('teacher_students') }}">Reset</a>
+      </div>
+    </form>
+
+    {% if q %}
+    <div class="top-gap">
+      <h4>Search results</h4>
+      <div class="search-result-list">
+        {% for row in search_results %}
+          <a class="search-result-item" href="{{ row.jump_url }}">
+            <strong>{{ row.username }}</strong>
+            <span>{{ row.email }}</span>
+            <span>{{ row.group_name }}</span>
+          </a>
+        {% else %}
+          <div class="muted">No matching students.</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="top-gap">
+      <h4>{{ current_section_title }}</h4>
+      <table class="data-table small-table">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Password</th>
+            <th>Completed</th>
+            <th>Attempted</th>
+            <th>Move group</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in current_section_rows %}
+          <tr>
+            <td>{{ row.username }}</td>
+            <td>{{ row.email }}</td>
+            <td>{{ row.password_status }}</td>
+            <td>{{ row.completed_count }}</td>
+            <td>{{ row.attempted_count }}</td>
+            <td>
+              <form method="post" action="{{ url_for('teacher_update_student_group', student_id=row.id) }}" class="inline-form" novalidate>
+                <select name="group_id">
+                  <option value="">No group</option>
+                  {% for group in group_options %}
+                    <option value="{{ group.id }}" {% if row.group_id == group.id %}selected{% endif %}>{{ group.name }}{% if group.year_label %} ({{ group.year_label }}){% endif %}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="small-btn">Save</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">No students in this section.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

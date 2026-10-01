@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>Teacher dashboard</h2>
+  <div class="button-row compact-buttons">
+    <a class="button-link secondary-link" href="{{ url_for('teacher_students') }}">Manage students</a>
+    <a class="button-link secondary-link" href="{{ url_for('teacher_groups') }}">Manage groups</a>
+    <a class="button-link secondary-link" href="{{ url_for('teacher_exercise_access') }}">Bulk exercise access</a>
+    <a class="button-link secondary-link" href="{{ url_for('teacher_export_exercises_csv', q=q, group_filter=group_filter, window_filter=window_filter, difficulty=difficulty_filter) }}">Export exercises CSV</a>
+    <a class="button-link secondary-link" href="{{ url_for('teacher_export_progress_csv', q=q, group_filter=group_filter, window_filter=window_filter, difficulty=difficulty_filter) }}">Export progress CSV</a>
+    <a class="button-link" href="{{ url_for('teacher_new_exercise') }}">Create exercise</a>
+  </div>
+</div>
+
+
+<div class="stats-grid top-gap">
+  <div class="card stat-card">
+    <div class="muted">Exercises shown</div>
+    <div class="stat-value">{{ summary.exercise_count }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Open now</div>
+    <div class="stat-value">{{ summary.open_now }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Managed students</div>
+    <div class="stat-value">{{ summary.student_count }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Active groups</div>
+    <div class="stat-value">{{ summary.group_count }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Submissions</div>
+    <div class="stat-value">{{ summary.submission_count }}</div>
+  </div>
+</div>
+<div class="card top-gap">
+  <h3>Quick generate canonical exercises</h3>
+  <p class="muted">Create one of the PDF testing languages in a single click, with optional group assignment.</p>
+  <div class="preset-grid">
+    {% for preset in canonical_presets %}
+      <form method="post" action="{{ url_for('teacher_create_preset_exercise', slug=preset.slug) }}" class="preset-card" novalidate>
+        <div class="preset-title">{{ preset.title }}</div>
+        <div class="muted small-text">{{ preset.description }}</div>
+        <div class="small-stack top-gap">
+          <div><strong>Difficulty:</strong> {{ preset.difficulty }}</div>
+          <div><strong>Tags:</strong> {{ preset.tags }}</div>
+        </div>
+        <label class="top-gap">Assign to group (optional)
+          <select name="group_ids">
+            <option value="">No restriction</option>
+            {% for grp in active_groups %}
+              <option value="{{ grp.id }}">{{ grp.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="top-gap">Create preset</button>
+      </form>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card top-gap">
+  <form method="get" class="toolbar-grid" novalidate>
+    <label>Find exercise
+      <input type="text" name="q" value="{{ q }}" placeholder="Search title or description">
+    </label>
+    <label>Group rule
+      <select name="group_filter">
+        <option value="all" {% if group_filter == 'all' %}selected{% endif %}>All exercises</option>
+        <option value="open_all" {% if group_filter == 'open_all' %}selected{% endif %}>No group restriction</option>
+        <option value="restricted" {% if group_filter == 'restricted' %}selected{% endif %}>Assigned to one or more groups</option>
+      </select>
+    </label>
+    <label>Window status
+      <select name="window_filter">
+        <option value="all" {% if window_filter == 'all' %}selected{% endif %}>All windows</option>
+        <option value="always_open" {% if window_filter == 'always_open' %}selected{% endif %}>No time window</option>
+        <option value="open" {% if window_filter == 'open' %}selected{% endif %}>Open now</option>
+        <option value="not_open" {% if window_filter == 'not_open' %}selected{% endif %}>Not open yet</option>
+        <option value="closed" {% if window_filter == 'closed' %}selected{% endif %}>Closed</option>
+      </select>
+    </label>
+    <label>Difficulty
+      <select name="difficulty">
+        <option value="all" {% if difficulty_filter == 'all' %}selected{% endif %}>All levels</option>
+        <option value="standard" {% if difficulty_filter == 'standard' %}selected{% endif %}>Standard</option>
+        <option value="easy" {% if difficulty_filter == 'easy' %}selected{% endif %}>Easy</option>
+        <option value="medium" {% if difficulty_filter == 'medium' %}selected{% endif %}>Medium</option>
+        <option value="hard" {% if difficulty_filter == 'hard' %}selected{% endif %}>Hard</option>
+      </select>
+    </label>
+    <div class="toolbar-actions">
+      <button type="submit">Apply</button>
+      <a class="button-link secondary-link" href="{{ url_for('teacher_dashboard') }}">Reset</a>
+    </div>
+  </form>
+</div>
+
+<div class="card top-gap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Title</th>
+        <th>Alphabet</th>
+        <th>Difficulty</th>
+        <th>Tags</th>
+        <th>Groups</th>
+        <th>Window</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ex in exercises %}
+      <tr>
+        <td>{{ ex.id }}</td>
+        <td>{{ ex.title }}</td>
+        <td>{{ ex.alphabet }}</td>
+        <td>{{ ex.difficulty }}</td>
+        <td>{{ ex.tags_list|join(', ') if ex.tags_list else '—' }}</td>
+        <td>{{ ex.group_names|join(', ') if ex.group_names else 'All active groups / no restriction' }}</td>
+        <td>
+          {% if ex.available_from or ex.available_until %}
+            <div class="small-stack">
+              <div>From: {{ display_dt(ex.available_from) }}</div>
+              <div>Until: {{ display_dt(ex.available_until) }}</div>
+              <div class="muted small-text">Status: {{ ex.window_status|replace('_', ' ') }}</div>
+            </div>
+          {% else %}
+            <span class="muted">Always open</span>
+          {% endif %}
+        </td>
+        <td>{{ display_dt(ex.created_at) }}</td>
+        <td>
+          <div class="inline-actions">
+            <a href="{{ url_for('teacher_view_exercise', exercise_id=ex.id) }}">Open</a>
+            <a href="{{ url_for('teacher_edit_exercise', exercise_id=ex.id) }}">Edit</a>
+            <form method="post" action="{{ url_for('teacher_duplicate_exercise', exercise_id=ex.id) }}" class="inline-form">
+              <button type="submit" class="link-button">Duplicate</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9">No exercises match the current filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card top-gap">
+  <h3>Student progress overview</h3>
+  <div class="table-scroll">
+    <table class="data-table small-table progress-table">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Email</th>
+          <th>Group</th>
+          <th>Completed</th>
+          <th>Attempted</th>
+          <th>Last activity</th>
+          {% for ex in exercise_rows %}
+            <th>#{{ ex.id }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in overview %}
+        <tr>
+          <td>{{ row.username }}</td>
+          <td>{{ row.email }}</td>
+          <td>{{ row.group_name }}</td>
+          <td>{{ row.completed_count }}/{{ row.total_exercises }}</td>
+          <td>{{ row.attempted_count }}</td>
+          <td>{{ display_dt(row.last_activity) if row.last_activity else '—' }}</td>
+          {% for ex in exercise_rows %}
+            {% set item = progress_map.get(row.id, {}).get(ex.id) %}
+            <td>
+              {% if item and item.completed %}
+                <span class="status-badge status-complete">✓</span>
+              {% elif item %}
+                <span class="status-badge status-attempted">…</span>
+              {% else %}
+                <span class="status-badge status-new">—</span>
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 6 + exercise_rows|length }}">No active managed students found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">Archived groups are hidden from this overview. Archiving a group does not affect student access to already assigned work.</p>
+</div>
+{% endblock %}

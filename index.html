@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Automata Explorer — Minimal Viable Tool</title>
+  <title>Automata Explorer · DFA 演示</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{--bg:#0b0d10;--panel:#101318;--muted:#8b97a8;--text:#e6eef8;--ok:#10b981;--bad:#ef4444;--brand:#89b4ff}
@@ -41,14 +41,30 @@
     .bad{background:#2b0b0b;border:1px solid #5f2020}
     .path{word-break:break-word}
     .footer{color:#6b7280;margin-top:24px;font-size:13px}
+    a{color:var(--brand)}
+    .intro{margin-bottom:24px}
+    .features{padding-left:20px}
+    .path{white-space:pre-wrap}
     code.k{background:#0e1420;border:1px solid #23304a;border-radius:6px;padding:2px 6px;font-size:12px}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Automata Explorer — Minimal Viable Tool <span class="badge">DFA</span></h1>
+    <h1>Automata Explorer <span class="badge">DFA 演示</span></h1>
+    <section class="panel intro">
+      <p>自动机可视化练习与反馈系统，用最短反例和执行轨迹解释 DFA 答案的差异。</p>
+      <ul class="features">
+        <li>完整系统支持教师出题、学生图形编辑、练习分组和提交记录。</li>
+        <li>算法包括正则 / ε-NFA 转换、语言等价检查和状态最小化反馈。</li>
+        <li>本页保留早期的单文件 DFA 模拟器，完整 Flask 系统可下载后在本地运行。</li>
+      </ul>
+      <div class="row">
+        <a href="https://github.com/Gabriel6324/automata-explorer#本地运行">完整系统与运行说明</a>
+        <a href="#simulator">试用 DFA 模拟器</a>
+      </div>
+    </section>
 
-    <div class="grid">
+    <div class="grid" id="simulator">
       <div>
         <label for="states">States (comma-separated)</label>
         <input id="states" type="text" value="q0,q1">
@@ -114,9 +130,9 @@ q1,b=q1`,
       input: 'abba'
     };
 
-    function setOut(html, cls) {
+    function setOut(text, cls) {
       out.className = 'panel muted mono' + (cls ? ' status ' + cls : '');
-      out.innerHTML = html;
+      out.textContent = text;
     }
 
     function parseCSV(s) {
@@ -162,7 +178,8 @@ q1,b=q1`,
 
         // Basic validation
         if (states.length === 0) throw new Error('States must not be empty.');
-        if (alphabet.length === 0) throw new Error('Alphabet must not be empty.');
+        if (new Set(states).size !== states.length || states.some(state => /[,;=\r\n]/.test(state))) throw new Error('Use unique state names without delimiters.');
+        if (new Set(alphabet).size !== alphabet.length || alphabet.some(symbol => Array.from(symbol).length !== 1 || /[,;=ε\s]/u.test(symbol))) throw new Error('Use unique single-character symbols; delimiters and ε are reserved.');
         if (!states.includes(start)) throw new Error(`Start state "${start}" is not in States.`);
         for (const f of accepts) if (!states.includes(f)) throw new Error(`Accepting state "${f}" is not in States.`);
         for (const s of usedStates) if (!states.includes(s)) throw new Error(`Transition refers to unknown state: ${s}`);
@@ -171,7 +188,8 @@ q1,b=q1`,
         // Simulate
         let curr = start;
         const path = [curr];
-        const DEAD = '__dead__';
+        let DEAD = '__dead__';
+        while (states.includes(DEAD)) DEAD += '_';
         for (const ch of input) {
           if (!alphabet.includes(ch)) throw new Error(`Input symbol not in alphabet: ${ch}`);
           const key = curr + '|' + ch;
@@ -182,10 +200,7 @@ q1,b=q1`,
 
         const ok = accepts.has(curr);
         const pathStr = path.join(' → ');
-        const html =
-          `<div class="path">Path: ${pathStr}</div>` +
-          `<div style="margin-top:6px">Status: <strong style="color:${ok ? 'var(--ok)' : 'var(--bad)'}">${ok ? 'ACCEPT' : 'REJECT'}</strong></div>`;
-        setOut(html, ok ? 'ok' : 'bad');
+        setOut(`Path: ${pathStr}\nStatus: ${ok ? 'ACCEPT' : 'REJECT'}`, ok ? 'ok' : 'bad');
       } catch (e) {
         setOut(`JS Error: ${e.message}`, 'bad');
       }
@@ -198,7 +213,7 @@ q1,b=q1`,
       el('accept').value = SAMPLE.accept;
       el('delta').value = SAMPLE.delta;
       el('input').value = SAMPLE.input;
-      setOut('Sample loaded. Click <b>Run</b> to simulate.', '');
+      setOut('Sample loaded. Click Run to simulate.', '');
     }
 
     function clearAll() {

@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>Student dashboard</h2>
+</div>
+
+<div class="stats-grid top-gap">
+  <div class="stat-card">
+    <div class="stat-label">Total visible</div>
+    <div class="stat-value">{{ summary.total }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Open now</div>
+    <div class="stat-value">{{ summary.available }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Completed</div>
+    <div class="stat-value">{{ summary.completed }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">In progress</div>
+    <div class="stat-value">{{ summary.in_progress }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Locked</div>
+    <div class="stat-value">{{ summary.locked }}</div>
+  </div>
+</div>
+
+<div class="card top-gap">
+  <form method="get" class="toolbar-grid" novalidate>
+    <label>Find exercise
+      <input type="text" name="q" value="{{ q }}" placeholder="Search title or description">
+    </label>
+    <label>Status
+      <select name="status">
+        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All visible exercises</option>
+        <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+        <option value="progress" {% if status_filter == 'progress' %}selected{% endif %}>In progress</option>
+        <option value="not_started" {% if status_filter == 'not_started' %}selected{% endif %}>Not started</option>
+        <option value="locked" {% if status_filter == 'locked' %}selected{% endif %}>Locked</option>
+      </select>
+    </label>
+    <label>Difficulty
+      <select name="difficulty">
+        <option value="all" {% if difficulty_filter == 'all' %}selected{% endif %}>All levels</option>
+        <option value="standard" {% if difficulty_filter == 'standard' %}selected{% endif %}>Standard</option>
+        <option value="easy" {% if difficulty_filter == 'easy' %}selected{% endif %}>Easy</option>
+        <option value="medium" {% if difficulty_filter == 'medium' %}selected{% endif %}>Medium</option>
+        <option value="hard" {% if difficulty_filter == 'hard' %}selected{% endif %}>Hard</option>
+      </select>
+    </label>
+    <div class="toolbar-actions">
+      <button type="submit">Apply</button>
+      <a class="button-link secondary-link" href="{{ url_for('student_dashboard') }}">Reset</a>
+    </div>
+  </form>
+</div>
+
+<div class="card top-gap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Title</th>
+        <th>Alphabet</th>
+        <th>Difficulty</th>
+        <th>Tags</th>
+        <th>Window</th>
+        <th>Status</th>
+        <th>Last result</th>
+        <th>Best score</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ex in exercises %}
+      {% set item = progress.get(ex.id) %}
+      <tr>
+        <td>{{ ex.id }}</td>
+        <td>{{ ex.title }}</td>
+        <td>{{ ex.alphabet }}</td>
+        <td>{{ ex.difficulty }}</td>
+        <td>{{ ex.tags_list|join(', ') if ex.tags_list else '—' }}</td>
+        <td>
+          {% if ex.available_from or ex.available_until %}
+            <div class="small-stack">
+              <div>From: {{ display_dt(ex.available_from) }}</div>
+              <div>Until: {{ display_dt(ex.available_until) }}</div>
+            </div>
+          {% else %}
+            <span class="muted">Always open</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if ex.window_status == 'not_open' %}
+            <span class="status-badge status-new">Not open yet</span>
+          {% elif ex.window_status == 'closed' %}
+            <span class="status-badge status-attempted">Closed</span>
+          {% elif item and item.completed %}
+            <span class="status-badge status-complete">✓ Completed</span>
+          {% elif item %}
+            <span class="status-badge status-attempted">In progress</span>
+          {% else %}
+            <span class="status-badge status-new">Not started</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if item %}
+            {% if item.stale %}
+              Exercise updated; submit again.
+            {% elif item.latest_result.equivalent %}
+              Equivalent ✓
+            {% else %}
+              Counterexample: {{ item.latest_result.counterexample or '—' }}
+            {% endif %}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>{% if item and item.best_score %}{{ item.best_score.label }}{% else %}—{% endif %}</td>
+        <td>
+          {% if ex.window_status == 'open' %}
+            <a href="{{ url_for('student_attempt_exercise', exercise_id=ex.id) }}">Attempt</a>
+          {% else %}
+            <span class="muted">Locked</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10">No exercises match the current filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

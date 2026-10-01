@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>Manage groups</h2>
+  <a href="{{ url_for('teacher_dashboard') }}">Back</a>
+</div>
+<div class="layout-two">
+  <section class="card">
+    <h3>Create student group</h3>
+    <form method="post" class="form-grid one-col" novalidate>
+      <label>Group name
+        <input type="text" name="name" placeholder="Year 2 students">
+      </label>
+      <label>Year / label
+        <input type="text" name="year_label" placeholder="2025/26">
+      </label>
+      <button type="submit">Create group</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h3>Groups</h3>
+    <form method="get" class="toolbar-grid compact-toolbar" novalidate>
+      <label>Find group
+        <input type="text" name="q" value="{{ q }}" placeholder="Search name or year">
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All groups</option>
+          <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active only</option>
+          <option value="archived" {% if status_filter == 'archived' %}selected{% endif %}>Archived only</option>
+        </select>
+      </label>
+      <div class="toolbar-actions">
+        <button type="submit">Apply</button>
+        <a class="button-link secondary-link" href="{{ url_for('teacher_groups') }}">Reset</a>
+      </div>
+    </form>
+    <table class="data-table small-table top-gap">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Year</th>
+          <th>Members</th>
+          <th>Assigned exercises</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for group in groups %}
+        <tr>
+          <td>{{ group.name }}</td>
+          <td>{{ group.year_label or '—' }}</td>
+          <td>{{ group.member_count }}</td>
+          <td>{{ group.assigned_exercise_count }}</td>
+          <td>{{ 'Archived' if group.is_archived else 'Active' }}</td>
+          <td>
+            <div class="inline-actions">
+              <a href="{{ url_for('teacher_edit_group', group_id=group.id) }}">Edit</a>
+              <form method="post" action="{{ url_for('teacher_archive_group', group_id=group.id) }}" novalidate>
+                <button type="submit" class="secondary small-btn">{{ 'Unarchive' if group.is_archived else 'Archive' }}</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">No groups match the current filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted top-gap">Archiving a group hides it from the teacher dashboard overview, but does not remove student access to assigned exercises.</p>
+  </section>
+</div>
+{% endblock %}

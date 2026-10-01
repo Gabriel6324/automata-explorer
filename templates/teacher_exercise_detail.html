@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>{{ exercise.title }}</h2>
+  <div class="button-row compact-buttons">
+    <a class="button-link secondary-link" href="{{ url_for('teacher_edit_exercise', exercise_id=exercise.id) }}">Edit</a>
+    <form method="post" action="{{ url_for('teacher_duplicate_exercise', exercise_id=exercise.id) }}" class="inline-form">
+      <button type="submit" class="button-link secondary-link">Duplicate</button>
+    </form>
+    <a class="button-link secondary-link" href="{{ url_for('teacher_export_exercise_submissions_csv', exercise_id=exercise.id) }}">Export submissions CSV</a>
+    <a href="{{ url_for('teacher_dashboard') }}">Back</a>
+  </div>
+</div>
+<div class="stats-grid top-gap">
+  <div class="card stat-card">
+    <div class="muted">Managed students</div>
+    <div class="stat-value">{{ detail_summary.students_total }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Assigned</div>
+    <div class="stat-value">{{ detail_summary.assigned }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Completed</div>
+    <div class="stat-value">{{ detail_summary.completed }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Attempted</div>
+    <div class="stat-value">{{ detail_summary.attempted }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Not started</div>
+    <div class="stat-value">{{ detail_summary.not_started }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="muted">Not assigned</div>
+    <div class="stat-value">{{ detail_summary.not_assigned }}</div>
+  </div>
+</div>
+
+<div class="layout-two">
+  <section class="card">
+    <p><strong>Description:</strong> {{ exercise.description or '—' }}</p>
+    <p><strong>Alphabet:</strong> {{ exercise.alphabet }}</p>
+    <p><strong>Difficulty:</strong> {{ exercise.difficulty or 'Standard' }}</p>
+    <p><strong>Source type:</strong> {{ (exercise.source_kind or 'dfa')|upper }}</p>
+    {% if exercise.source_payload and (exercise.source_kind or 'dfa') != 'dfa' %}<p><strong>Source input:</strong></p><pre class="json-preview">{{ exercise.source_payload }}</pre>{% endif %}
+    <p><strong>Tags:</strong> {{ tags_text(exercise.tags or '') or '—' }}</p>
+    <p><strong>Require determinism:</strong> {{ 'Yes' if exercise.require_determinism else 'No' }}</p>
+    <p><strong>Require minimality:</strong> {{ 'Yes' if exercise.require_minimality else 'No' }}</p>
+    <p><strong>Assigned groups:</strong> {{ assigned_group_names|join(', ') if assigned_group_names else 'All groups / no restriction' }}</p>
+    <p><strong>Available from:</strong> {{ display_dt(exercise.available_from) }}</p>
+    <p><strong>Available until:</strong> {{ display_dt(exercise.available_until) }}</p>
+    <div id="target-preview" class="graph-preview"></div>
+    <pre id="target-json-preview" class="json-preview">{{ target_dfa | tojson(indent=2) }}</pre>
+  </section>
+  <section class="card">
+    <h3>Submissions</h3>
+    <table class="data-table small-table">
+      <thead>
+      <tr><th>Student</th><th>Version</th><th>Equivalent</th><th>Minimal</th><th>Counterexample</th><th>Score</th><th>Time</th></tr>
+      </thead>
+      <tbody>
+      {% for s in submissions %}
+        {% set result = decode_json(s.result_json) %}
+        <tr>
+          <td>{{ s.username }}</td>
+          <td>v{{ s.exercise_revision }}{% if s.exercise_revision != exercise.revision %} · Previous version{% else %} · Current{% endif %}</td>
+          <td>{{ 'Yes' if result.equivalent else 'No' }}</td>
+          <td>{{ 'Yes' if result.minimal else 'No' }}</td>
+          <td>{{ result.counterexample or '—' }}</td>
+          <td>{{ result.score.label if result.score else '—' }}</td>
+          <td>{{ display_dt(s.created_at) }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">No submissions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="top-gap">
+      <h3>Student status</h3>
+      <table class="data-table small-table">
+        <thead>
+          <tr><th>Student</th><th>Group</th><th>Status</th><th>Equivalent</th><th>Minimal</th><th>Last update</th></tr>
+        </thead>
+        <tbody>
+          {% for row in student_status_rows %}
+          <tr>
+            <td>{{ row.username }}</td>
+            <td>{{ row.group_name }}</td>
+            <td>
+              {% if row.status == 'Needs resubmission' %}
+                <span class="status-badge status-attempted">Needs resubmission</span>
+              {% elif row.status == 'Completed' %}
+                <span class="status-badge status-complete">✓ Completed</span>
+              {% elif row.status == 'Attempted' %}
+                <span class="status-badge status-attempted">Attempted</span>
+              {% elif row.status == 'Not assigned' %}
+                <span class="status-badge status-new">Not assigned</span>
+              {% else %}
+                <span class="status-badge status-new">Not started</span>
+              {% endif %}
+            </td>
+            <td>{% if row.equivalent is none %}—{% else %}{{ 'Yes' if row.equivalent else 'No' }}{% endif %}</td>
+            <td>{% if row.minimal is none %}—{% else %}{{ 'Yes' if row.minimal else 'No' }}{% endif %}</td>
+            <td>{{ display_dt(row.time) if row.time else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+<script>
+window.addEventListener('load', function() {
+  const dfa = {{ target_dfa | tojson }};
+  renderDfaPreview(dfa, 'target-preview', 'target-json-preview');
+});
+</script>
+{% endblock %}

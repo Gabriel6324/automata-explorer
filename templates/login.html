@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card narrow">
+  <h2>Login</h2>
+  <p class="muted">Demo accounts: teacher1 / teacher123 and student1 / student123</p>
+  <form method="post" class="form-grid one-col" novalidate>
+    <label>Username
+      <input type="text" name="username">
+    </label>
+    <label>Password
+      <input type="password" name="password">
+    </label>
+    <button type="submit">Login</button>
+  </form>
+</div>
+{% endblock %}

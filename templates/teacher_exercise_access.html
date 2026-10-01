@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>Bulk exercise access</h2>
+  <a href="{{ url_for('teacher_dashboard') }}">Back</a>
+</div>
+<div class="card">
+  <form method="get" class="toolbar-grid compact-toolbar" novalidate>
+    <label>Find exercise
+      <input type="text" name="q" value="{{ q }}" placeholder="Search title or description">
+    </label>
+    <div class="toolbar-actions">
+      <button type="submit">Apply</button>
+      <a class="button-link secondary-link" href="{{ url_for('teacher_exercise_access') }}">Reset</a>
+    </div>
+  </form>
+</div>
+<div class="card top-gap">
+  <form method="post" novalidate>
+    <div class="table-scroll">
+      <table class="data-table small-table progress-table">
+        <thead>
+          <tr>
+            <th>Exercise</th>
+            {% for group in groups %}
+              <th>{{ group.name }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for ex in exercises %}
+          <tr>
+            <td>{{ ex.title }}</td>
+            {% for group in groups %}
+              <td>
+                <label class="plain-check">
+                  <input type="checkbox" name="groups_{{ ex.id }}" value="{{ group.id }}" {% if group.id in assignment_map.get(ex.id, []) %}checked{% endif %}>
+                </label>
+              </td>
+            {% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ 1 + groups|length }}">No exercises match the current filter.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="button-row top-gap">
+      <button type="submit">Save group access</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>{{ "Edit exercise" if mode == "edit" else "Create exercise" }}</h2>
+  <a href="{{ url_for('teacher_dashboard') }}">Back</a>
+</div>
+<form method="post" class="layout-two" novalidate data-dfa-form="true" data-editor-id="teacher-visual-editor" data-validation-id="teacher-validation" data-preview-id="teacher-preview" data-json-id="teacher-json-preview" data-source-status-id="teacher-source-status" data-source-mode-note-id="teacher-source-mode-note">
+  <section class="card">
+    <h3>Exercise form</h3>
+    <div class="form-grid">
+      <label>Title
+        <input type="text" name="title" value="{{ initial.get('title', '') }}">
+      </label>
+      <label>Description
+        <textarea name="description" rows="3">{{ initial.get('description', '') }}</textarea>
+      </label>
+      <div class="form-grid two-col">
+        <label>Target source type
+          {% set source_kind = initial.get('source_kind', 'dfa') %}
+          <select name="source_kind" data-source-kind onchange="updateSourceKindUI(this.form)">
+            <option value="dfa" {% if source_kind == 'dfa' %}selected{% endif %}>DFA</option>
+            <option value="regex" {% if source_kind == 'regex' %}selected{% endif %}>Regular expression → DFA</option>
+            <option value="nfa" {% if source_kind == 'nfa' %}selected{% endif %}>NFA JSON → DFA</option>
+          </select>
+        </label>
+        <label>Difficulty
+          <select name="difficulty">
+            {% set diff = initial.get('difficulty', 'Standard') %}
+            <option value="Standard" {% if diff == 'Standard' %}selected{% endif %}>Standard</option>
+            <option value="Easy" {% if diff == 'Easy' %}selected{% endif %}>Easy</option>
+            <option value="Medium" {% if diff == 'Medium' %}selected{% endif %}>Medium</option>
+            <option value="Hard" {% if diff == 'Hard' %}selected{% endif %}>Hard</option>
+          </select>
+        </label>
+        <label>Tags (comma-separated)
+          <input type="text" name="tags" value="{{ initial.get('tags', '') }}" placeholder="equivalence, minimality, substring">
+        </label>
+      </div>
+      <div class="source-panels">
+        <div class="source-panel source-panel-card" data-source-panel="regex">
+          <div class="source-panel-head">
+            <div>
+              <h4 class="subheading">Regular expression source</h4>
+              <p class="muted small-text">Type a regex and the target DFA preview below updates from it. The manual DFA fields become read-only while this mode is active.</p>
+            </div>
+            <div class="button-row compact-buttons source-panel-actions">
+              <button type="button" class="secondary" onclick="insertRegexSample(this, '(a|b)*ab')">Load sample</button>
+              <button type="button" class="secondary" onclick="previewSourceFromButton(this)">Generate DFA preview</button>
+            </div>
+          </div>
+          <label>Regex input
+            <textarea name="regex_source" rows="4" placeholder="(a|b)*ab" data-source-input="regex">{{ initial.get('regex_source', '') }}</textarea>
+          </label>
+          <div class="source-help-grid">
+            <div class="source-help-card"><strong>Supported syntax</strong><br>Use single-character symbols, parentheses, union <code>|</code>, star <code>*</code>, and implicit concatenation such as <code>ab</code>.</div>
+            <div class="source-help-card"><strong>Example</strong><br><code>(a|b)*ab</code> generates the language of strings ending in <code>ab</code>.</div>
+          </div>
+        </div>
+        <div class="source-panel source-panel-card" data-source-panel="nfa">
+          <div class="source-panel-head">
+            <div>
+              <h4 class="subheading">NFA JSON source</h4>
+              <p class="muted small-text">Paste an NFA in JSON form. The app converts it to a DFA target and shows the generated result below.</p>
+            </div>
+            <div class="button-row compact-buttons source-panel-actions">
+              <button type="button" class="secondary" onclick="insertNfaSample(this)">Load sample</button>
+              <button type="button" class="secondary" onclick="previewSourceFromButton(this)">Generate DFA preview</button>
+            </div>
+          </div>
+          <label>NFA JSON input
+            <textarea name="nfa_source" rows="11" placeholder='{"states": ["q0","q1"], "alphabet": ["a","b"], "start": "q0", "accepting": ["q1"], "transitions": {"q0": {"a": ["q0","q1"]}}}' data-source-input="nfa">{{ initial.get('nfa_source', '') }}</textarea>
+          </label>
+          <div class="source-help-grid">
+            <div class="source-help-card"><strong>Required keys</strong><br><code>states</code>, <code>alphabet</code>, <code>start</code>, <code>accepting</code>, and <code>transitions</code>.</div>
+            <div class="source-help-card"><strong>Epsilon transitions</strong><br>Use <code>"ε"</code> or an empty-string key for epsilon transitions.</div>
+          </div>
+        </div>
+      </div>
+      <div id="teacher-source-status" class="source-status top-gap muted">Choose a source type. In DFA mode you can edit the target directly. In regex / NFA mode the target preview is generated from the source input.</div>
+      <div class="form-grid two-col">
+        <label>Available from
+          <input type="datetime-local" name="available_from" value="{{ initial.get('available_from', '') }}">
+        </label>
+        <label>Available until
+          <input type="datetime-local" name="available_until" value="{{ initial.get('available_until', '') }}">
+        </label>
+      </div>
+      <label>Assigned groups (leave empty for all groups)
+        <select name="group_ids" multiple class="multi-select">
+          {% set selected_groups = initial.getlist('group_ids') if initial.getlist is defined else initial.get('group_ids', []) %}
+          {% for group in group_options %}
+            <option value="{{ group.id }}" {% if group.id|string in selected_groups or group.id in selected_groups %}selected{% endif %}>{{ group.name }}{% if group.year_label %} ({{ group.year_label }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="visual-builder top-gap">
+        <div class="builder-header">
+          <div>
+            <h4 class="subheading">Visual editor</h4>
+            <p class="muted small-text">Author the DFA directly on the canvas, then keep the structured text view in sync. Click a transition and drag its endpoint into a different state. The reconnect button is kept as a fallback.</p><p id="teacher-source-mode-note" class="muted small-text" style="display:none;">Derived-source mode is active. The fields and canvas below show the DFA generated from the regex / NFA source above.</p>
+          </div>
+        </div>
+                <div class="visual-action-stack">
+          <div class="button-row compact-buttons visual-action-row upper">
+            <button type="button" class="secondary" onclick="addStateFromButton(this)" data-dfa-edit-btn="true">Add state</button>
+            <button type="button" class="secondary" onclick="setStartFromButton(this)" data-dfa-edit-btn="true">Set start</button>
+            <button type="button" class="secondary" onclick="toggleAcceptingFromButton(this)" data-dfa-edit-btn="true">Toggle accepting</button>
+            <button type="button" class="secondary" onclick="deleteSelectionFromButton(this)" data-dfa-edit-btn="true">Delete selected</button>
+          </div>
+          <div class="button-row compact-buttons visual-action-row middle">
+            <button type="button" class="secondary" onclick="connectStatesFromButton(this)" data-dfa-edit-btn="true">Add transition</button>
+            <button type="button" class="secondary" onclick="editTransitionFromButton(this)" data-dfa-edit-btn="true">Edit transition</button>
+            <button type="button" class="secondary" onclick="reconnectTransitionFromButton(this)" data-dfa-edit-btn="true">Reconnect transition</button>
+          </div>
+          <div class="button-row compact-buttons visual-action-row lower">
+            <button type="button" class="secondary" onclick="undoEditorFromButton(this)" data-dfa-edit-btn="true">Undo</button>
+            <button type="button" class="secondary" onclick="redoEditorFromButton(this)" data-dfa-edit-btn="true">Redo</button>
+            <button type="button" class="secondary" onclick="autoLayoutFromButton(this)">Auto layout</button>
+            <button type="button" class="secondary" onclick="clearAllFromButton(this)" data-dfa-edit-btn="true">Clear all</button>
+            <button type="submit" onclick="if (this.form._dfaEditor) this.form._dfaEditor.syncFormFromEditor()">{{ "Save changes" if mode == "edit" else "Save exercise" }}</button>
+          </div>
+        </div>
+        <div id="teacher-visual-editor" class="graph-preview top-gap"></div>
+      </div>
+
+      <div id="teacher-validation" class="validation-panel top-gap"></div>
+
+      <label>States (comma-separated)
+        <input type="text" name="states" value="{{ initial.get('states', '') }}" data-dfa-sync data-dfa-lock="true">
+      </label>
+      <label>Alphabet (comma-separated)
+        <input type="text" name="alphabet" value="{{ initial.get('alphabet', '') }}" data-dfa-sync data-dfa-lock="true">
+      </label>
+      <label>Start state
+        <input type="text" name="start" value="{{ initial.get('start', '') }}" data-dfa-sync data-dfa-lock="true">
+      </label>
+      <label>Accepting states (comma-separated)
+        <input type="text" name="accepting" value="{{ initial.get('accepting', '') }}" data-dfa-sync data-dfa-lock="true">
+      </label>
+      <label>Transitions (one rule per line: state,symbol=next_state)
+        <textarea name="transitions" rows="10" data-dfa-sync data-dfa-lock="true">{{ initial.get('transitions', '') }}</textarea>
+      </label>
+      <div class="checks-row">
+        <label><input type="checkbox" name="require_determinism" {% if initial.get('require_determinism', True) %}checked{% endif %}> Require determinism</label>
+        <label><input type="checkbox" name="require_minimality" {% if initial.get('require_minimality', True) %}checked{% endif %}> Require minimality</label>
+      </div>
+    </div>
+    <input type="file" id="teacher-json-file" accept="application/json,.json" class="hidden-file-input" onchange="loadDfaJsonIntoForm(this, this.form.closest('form'))">
+    <div class="button-row">
+      <button type="button" class="secondary" onclick="if (this.form._dfaEditor) this.form._dfaEditor.syncFormFromEditor(); renderDfaPreviewFromForm(this.form, 'teacher-preview', 'teacher-json-preview')">Preview</button>
+      <button type="button" class="secondary" onclick="downloadDfaJson(this.form)">Download JSON</button>
+      <button type="button" class="secondary" onclick="document.getElementById('teacher-json-file').click()">Upload JSON</button>
+      <button type="submit">{{ "Save changes" if mode == "edit" else "Save exercise" }}</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>Preview JSON</h3>
+    <pre id="teacher-json-preview" class="json-preview"></pre>
+    <h4>Preview</h4>
+    <div id="teacher-preview" class="graph-preview"></div>
+  </section>
+</form>
+<script>
+window.addEventListener('load', function() {
+  const form = document.querySelector('form');
+  updateSourceKindUI(form);
+  renderDfaPreviewFromForm(form, 'teacher-preview', 'teacher-json-preview');
+});
+</script>
+{% endblock %}

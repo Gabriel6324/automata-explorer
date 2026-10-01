@@ -1,0 +1,196 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <h2>{{ exercise.title }}</h2>
+  <a href="{{ url_for('student_dashboard') }}">Back</a>
+</div>
+<div class="exercise-banner">
+  <strong>Alphabet:</strong> {{ exercise.alphabet or '∅ (empty alphabet)' }}
+  <span>• Version: {{ exercise.revision }}</span>
+  <span>• Difficulty: {{ exercise.difficulty or 'Standard' }}</span>
+  {% if exercise.tags %}<span>• Tags: {{ tags_text(exercise.tags) }}</span>{% endif %}
+  {% if exercise.description %}<span>• {{ exercise.description }}</span>{% endif %}
+  {% if exercise.available_from or exercise.available_until %}
+    <span>• Window: {{ display_dt(exercise.available_from) }} to {{ display_dt(exercise.available_until) }}</span>
+  {% endif %}
+</div>
+<form method="post" class="layout-two" novalidate data-dfa-form="true" data-fixed-alphabet="{{ target_dfa.alphabet|join(',') }}" data-editor-id="student-visual-editor" data-validation-id="student-validation" data-preview-id="student-preview" data-json-id="student-json-preview">
+  <section class="card">
+    <div class="tab-row">
+      <button type="button" class="tab-btn active" onclick="showBuilderTab('builder-tab', this)">Visual/Text editor</button>
+      <button type="button" class="tab-btn" onclick="showBuilderTab('preview-tab', this); renderDfaPreviewFromForm(this.form, 'student-preview', 'student-json-preview')">Preview</button>
+    </div>
+
+    <div id="builder-tab" class="builder-tab active">
+      <div class="visual-builder top-gap">
+        <div class="builder-header">
+          <div>
+            <h4 class="subheading">Visual editor</h4>
+            <p class="muted small-text">Add states, select one or two states, then build transitions visually. Double-click a state or transition to rename it. Use Reconnect transition, then click a target state to move an arrow to a different destination.</p>
+          </div>
+        </div>
+                <div class="visual-action-stack">
+          <div class="button-row compact-buttons visual-action-row upper">
+            <button type="button" class="secondary" onclick="addStateFromButton(this)">Add state</button>
+            <button type="button" class="secondary" onclick="setStartFromButton(this)">Set start</button>
+            <button type="button" class="secondary" onclick="toggleAcceptingFromButton(this)">Toggle accepting</button>
+            <button type="button" class="secondary" onclick="deleteSelectionFromButton(this)">Delete selected</button>
+          </div>
+          <div class="button-row compact-buttons visual-action-row middle">
+            <button type="button" class="secondary" onclick="connectStatesFromButton(this)">Add transition</button>
+            <button type="button" class="secondary" onclick="editTransitionFromButton(this)">Edit transition</button>
+            <button type="button" class="secondary" onclick="reconnectTransitionFromButton(this)">Reconnect transition</button>
+          </div>
+          <div class="button-row compact-buttons visual-action-row lower">
+            <button type="button" class="secondary" onclick="undoEditorFromButton(this)">Undo</button>
+            <button type="button" class="secondary" onclick="redoEditorFromButton(this)">Redo</button>
+            <button type="button" class="secondary" onclick="autoLayoutFromButton(this)">Auto layout</button>
+            <button type="button" class="secondary" onclick="clearAllFromButton(this)">Clear all</button>
+            <button type="submit" onclick="if (this.form._dfaEditor) this.form._dfaEditor.syncFormFromEditor()">Save / check</button>
+          </div>
+        </div>
+        <div id="student-visual-editor" class="graph-preview top-gap"></div>
+      </div>
+
+      <div id="student-validation" class="validation-panel top-gap"></div>
+
+      <div class="form-grid top-gap">
+        <label>States (comma-separated)
+          <input type="text" name="states" value="{{ initial.get('states', '') }}" data-dfa-sync>
+        </label>
+        <label>Alphabet (set by exercise)
+          <input type="text" name="alphabet" value="{{ target_dfa.alphabet|join(',') }}" readonly data-dfa-sync>
+        </label>
+        <label>Start state
+          <input type="text" name="start" value="{{ initial.get('start', '') }}" data-dfa-sync>
+        </label>
+        <label>Accepting states (comma-separated)
+          <input type="text" name="accepting" value="{{ initial.get('accepting', '') }}" data-dfa-sync>
+        </label>
+        <label>Transitions (one rule per line: state,symbol=next_state)
+          <textarea name="transitions" rows="12" data-dfa-sync>{{ initial.get('transitions', '') }}</textarea>
+        </label>
+      </div>
+      <input type="file" id="student-json-file" accept="application/json,.json" class="hidden-file-input" onchange="loadDfaJsonIntoForm(this, this.form.closest('form'))">
+      <div class="button-row">
+        <button type="button" class="secondary" onclick="previewFromButton(this)">Preview graph</button>
+        <button type="button" class="secondary" onclick="downloadDfaJson(this.form)">Download JSON</button>
+        <button type="button" class="secondary" onclick="document.getElementById('student-json-file').click()">Upload JSON</button>
+        <button type="submit">Check & save</button>
+      </div>
+    </div>
+
+    <div id="preview-tab" class="builder-tab">
+      <div id="student-preview" class="graph-preview"></div>
+      <pre id="student-json-preview" class="json-preview"></pre>
+    </div>
+  </section>
+
+  <section class="card sticky-panel">
+    <h3>Results</h3>
+    {% if result %}
+      <div class="results-box">
+        <p><strong>Equivalence:</strong> {{ '✓' if result.equivalent else '✗' }}</p>
+        {% if result.deterministic is not none %}<p><strong>Deterministic:</strong> {{ '✓' if result.deterministic else '✗' }}</p>{% endif %}
+        {% if result.minimal is not none %}<p><strong>Minimal:</strong> {{ '✓' if result.minimal else '✗' }}</p>{% endif %}
+        {% if result.score %}<p><strong>Score:</strong> {{ result.score.label }}</p>{% endif %}
+        <p><strong>Counterexample:</strong> {{ result.counterexample or 'None' }}</p>
+        <div>
+          <strong>Hints:</strong>
+          <ul>
+            {% for hint in result.hints %}
+              <li>{{ hint }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% if result.minimal is not none and not result.minimal %}<p><strong>Minimal target size:</strong> {{ result.minimized_state_count }} states</p>{% endif %}
+        {% if result.merge_groups %}
+        <div class="top-gap">
+          <strong>Possible merge groups</strong>
+          <div class="partition-block-row top-gap-small">
+            {% for group in result.merge_groups %}
+              <span class="partition-chip">{{ '{' }}{{ group|join(', ') }}{{ '}' }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if result.partition_feedback %}
+        <div class="top-gap">
+          <strong>Partition feedback</strong>
+          <ul>
+            {% for line in result.partition_feedback %}
+              <li>{{ line }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+        {% if result.partition_snapshots %}
+        <div class="top-gap">
+          <strong>Partition snapshots</strong>
+          <div class="partition-snapshot-grid">
+            {% for snapshot in result.partition_snapshots %}
+            <div class="partition-card">
+              <h4>{{ snapshot.title }}</h4>
+              <p class="muted small-text">{{ snapshot.reason }}</p>
+              <div class="partition-block-row">
+                {% for block in snapshot.blocks %}
+                  <span class="partition-chip">{{ '{' }}{{ block|join(', ') }}{{ '}' }}</span>
+                {% endfor %}
+              </div>
+              {% if snapshot.splits %}
+                <ul class="partition-split-list">
+                  {% for split in snapshot.splits %}
+                    <li>{{ '{' }}{{ split.from|join(', ') }}{{ '}' }} → {% for part in split.parts %}<span class="partition-chip inline-chip">{{ '{' }}{{ part.states|join(', ') }}{{ '}' }}</span>{% if not loop.last %} {% endif %}{% endfor %}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if result.counterexample_trace %}
+        <div class="top-gap">
+          <strong>Counterexample trace</strong>
+          <div class="trace-grid">
+            <div class="trace-card">
+              <h4>Your DFA</h4>
+              <p class="muted small-text">{{ 'Accepts' if result.counterexample_trace.answer.accepted else 'Rejects' }} {{ result.counterexample }}</p>
+              <ol class="trace-list">
+                {% for step in result.counterexample_trace.answer.steps %}
+                  <li>
+                    {% if step.symbol == 'start' %}
+                      Start at <strong>{{ step.state }}</strong>
+                    {% else %}
+                      Read <code>{{ step.symbol }}</code> → <strong>{{ step.state }}</strong>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ol>
+            </div>
+            <div class="trace-card">
+              <h4>Target DFA</h4>
+              <p class="muted small-text">{{ 'Accepts' if result.counterexample_trace.target.accepted else 'Rejects' }} {{ result.counterexample }}</p>
+              <ol class="trace-list">
+                {% for step in result.counterexample_trace.target.steps %}
+                  <li>
+                    {% if step.symbol == 'start' %}
+                      Start at <strong>{{ step.state }}</strong>
+                    {% else %}
+                      Read <code>{{ step.symbol }}</code> → <strong>{{ step.state }}</strong>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ol>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+    {% else %}
+      <p class="muted">Submit an answer to see equivalence, determinism, minimality and a counterexample if needed.</p>
+    {% endif %}
+  </section>
+</form>
+{% endblock %}

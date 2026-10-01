@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><h2>My submissions</h2></div>
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Exercise</th>
+        <th>Version</th>
+        <th>Equivalent</th>
+        <th>Minimal</th>
+        <th>Counterexample</th>
+        <th>Score</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in submissions %}
+        {% set result = decode_json(s.result_json) %}
+        <tr>
+          <td>{{ s.title }}</td>
+          <td>v{{ s.exercise_revision }}{% if s.exercise_revision != s.current_revision %} · Previous version{% else %} · Current{% endif %}</td>
+          <td>{{ 'Yes' if result.equivalent else 'No' }}</td>
+          <td>{{ 'Yes' if result.minimal else 'No' }}</td>
+          <td>{{ result.counterexample or '—' }}</td>
+          <td>{{ result.score.label if result.score else '—' }}</td>
+          <td>{{ s.created_at[:19].replace('T', ' ') }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">No submissions yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
